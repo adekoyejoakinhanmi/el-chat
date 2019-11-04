@@ -10,11 +10,7 @@
 </template>
 
 <script>
-import {
-  ConversationalForm,
-  EventDispatcher,
-  ChatResponseEvents
-} from 'conversational-form';
+import { ConversationalForm } from 'conversational-form';
 import { plans } from "@/assets/js/plans";
 import { robotImage, userImage } from "@/assets/js/misc";
 import { isEqual } from "lodash";
@@ -33,6 +29,10 @@ export default {
     }
   },
   computed: {
+    /**
+     * Figure out the user's current plan based on already
+     * selected preferences
+     */
     currentPlan() {
       if (
         !Object.keys(this.services).length
@@ -45,6 +45,11 @@ export default {
       })
       return filterPlan[0];
     },
+    /**
+     * Provide a sensible object that can be used to search
+     * plans. It returns an object that is equivalent to the
+     * description property of a plan object
+     */
     services() {
       if (!this.chatReplies) return {};
       const itemsToCollect = {};
@@ -55,20 +60,26 @@ export default {
           if (service === 'laundry-freq' && itemPreference !== "") {
             itemsToCollect['Laundry'] = itemPreference
           }
-          if (service === 'cleaning-roomsize' && itemPreference !== "") {
+          if (service === 'cleaning-rooms' && itemPreference !== "") {
             itemsToCollect['Rooms'] = itemPreference
           }
-          if (service === 'cleaning-frequency' && itemPreference !== "") {
+          if (service === 'cleaning-freq' && itemPreference !== "") {
             itemsToCollect['Cleaning'] = itemPreference
           }
           if (service === 'meal-freq' && itemPreference !== "") {
             itemsToCollect['Meals'] = itemPreference
           }
         });
-      if (itemsToCollect.Rooms && !itemsToCollect.Cleaning)
+      
+      /* Delete Rooms since the response to Cleaning is a dependency */
+      if (itemsToCollect.Rooms && !itemsToCollect.Cleaning) {
         delete itemsToCollect.Rooms;
+      }
       return itemsToCollect;
     },
+    /**
+     * Figure out if the chat is near it's end
+     */
     isPenultimateStep() {
       const {
         maxSteps,
@@ -82,15 +93,58 @@ export default {
   },
   mounted() {
     this.setupForm();
+    // Setup Paystack
     const el = document.createElement('script');
     el.src = 'https://js.paystack.co/v1/inline.js';
     this.$el.appendChild(el);
   },
   methods: {
+    /**
+     * Transformer to transform services and chat replies
+     * into data that can be sent to the server.
+     */
+    compileData() {
+      const chatReplies = this.chatReplies;
+      const services = this.services;
+      const data = {
+        email: this.chatReplies['user_email'],
+        plan: this.currentPlan.name
+      }
+
+      if (this.selectedServices.includes('Laundry')) {
+        data.laundry = {
+          qty: chatReplies['laundry-qty'],
+          frequency: services['Laundry']
+        }
+      }
+      if (this.selectedServices.includes('Cleaning')) {
+        data.cleaning = {
+          rooms: services['Rooms'],
+          frequency: services['Cleaning']
+        }
+      }
+      if (this.selectedServices.includes('Meals')) {
+        data.meals = {
+          preferences: chatReplies['meal-pref'],
+          frequency: services['Meals']
+        }
+      }
+
+      return data;
+    },
+    /**
+     * Keep this component up to date on the current state of the
+     * chat replies
+     */
     updateChatReplies() {
       const formDataSerialized = this.cf.getFormData(true);
       this.chatReplies = formDataSerialized;
     },
+    /**
+     * Keep this component up to date on the current state of the
+     * steps. This is needed to determine the penultimate step. 
+     * @see vm.isPenultimateStep
+     */
     updateSteps() {
       const { maxSteps, step } = this.cf.flowManager;
       this.steps = {
@@ -98,15 +152,11 @@ export default {
         currentStep: step
       };
     },
-    userClickedChat(e) {
-      const currentTags = this.cf.tags;
-      const index = currentTags.map(t => t.name).indexOf(e.detail.name);
-      const updated = currentTags.slice(0, index + 1);
-      this.cf.chatList.clearFrom(index + 1);
-      this.cf.flowManager.setTags(updated);
-      this.cf.flowManager.startFrom(index + 1, true);
-      this.updateChatReplies();
-    },
+    /**
+     * This makes the paystack modal come up.
+     * If the payment wass successful, the chat will
+     * continue as normal otherwise an error is throw.
+     */
     initPayment(success, error) {
       const vm = this;
       const setupParams = {
@@ -123,20 +173,10 @@ export default {
       const handler = window.PaystackPop.setup(setupParams);
       handler.openIframe();
     },
-    addPaymentQuestion() {
-      const $vm = this;
-      const q = [{
-        "tag": "input",
-        "type": "radio",
-        "id": "init-payment",
-        "cf-questions": `Almost there. &&We just need to process your payment and Voila!&& Your services come to N${$vm.currentPlan.price}/month. Begin now?`,
-        "cf-label": "Yes",
-        "value": true,
-        "cf-error": "No payment processed. Retry?"
-      }];
-      this.addedPaymentQuestion = true;
-      this.cf.addTags(q);
-    },
+    /**
+     * Setup ConversationalForm and add the initial questions.
+     * The form is appended to the root element of this component.
+     */
     setupForm() {
       const formFields = [{
           "tag": "fieldset",
@@ -179,21 +219,13 @@ export default {
           "cf-error": "Please enter a valid email"
         }
       ];
-      const $vm = this;
-      const eventHandler = new EventDispatcher();
-      eventHandler.addEventListener(
-        ChatResponseEvents.USER_ANSWER_CLICKED,
-        $vm.UserClickedChat,
-        false
-      );
 
       const cf = ConversationalForm.startTheConversation({
         options: {
-          submitCallback: this.submitCallback,
+          submitCallback: this.submitForm,
           flowStepCallback: this.handleStepFlow,
           loadExternalStyleSheet: false,
           preventAutoFocus: true,
-          eventDispatcher: eventHandler,
           robotImage,
           userImage
         },
@@ -202,9 +234,18 @@ export default {
       this.cf = cf;
       this.$el.appendChild(this.cf.el);
     },
-    submitCallback() {
+    submitForm() {
+      const dataToSendToServer = this.compileData();
+      console.log(JSON.parse(JSON.stringify(dataToSendToServer)));
       this.cf.addRobotChatResponse("Yay! You are done. Your gardener will be in contact with you sson.")
     },
+    /**
+     * Here the next question to be asked is determined based on the id
+     * of current question. But then the questions follow the pattern of
+     *  Laundry -> Cleaning -> Meals -> Email -> Payment -> End
+     * 
+     * Response validation is alos designated here. @see initPayment
+     */
     handleStepFlow(dto, success, e) {
       const currentQuestionId = dto.tag.id;
 
@@ -246,6 +287,11 @@ export default {
       this.updateSteps();
       return success();
     },
+    /**
+     * This comes up once the user has determined services.
+     * It figures out where to start taking preferences from.
+     * Preference progression is Laundry -> Cleaning -> Meals
+     */
     mapAutomations(automations) {
       const firstItem = automations[0];
       this.selectedServices = automations;
@@ -257,13 +303,16 @@ export default {
         this.addMeals();
       }
     },
+    /** 
+     * Add the Laundry questions.
+     */
     addLaundry(questionId) {
       const laundry = [{
           "tag": "fieldset",
           "type": "Radio buttons",
           "id": "laundry-freq",
           "name": "laundry-freq",
-          "cf-input-placeholder": "",
+          "cf-input-placeholder": "Pick an option",
           "cf-questions": "Awesome &&How often would like us to come in to pick your laundry?",
           "children": [{
               "tag": "input",
@@ -287,7 +336,7 @@ export default {
           "type": "number",
           "id": "laundry-qty",
           "name": "laundry-qty",
-          "cf-input-placeholder": "",
+          "cf-input-placeholder": "Type bags count here",
           "cf-questions": "Okay &&How many bags of laundry are we picking {laundry-freq}? &&Note, each bag contains about 35 items."
         }
       ];
@@ -297,6 +346,9 @@ export default {
         laundry[0];
       this.cf.addTags([itemToAdd]);
     },
+    /** 
+     * Add the Cleaning questions.
+     */
     addCleaning(questionId) {
       const hasLaundry = this.selectedServices.includes('Laundry');
       const question =
@@ -308,40 +360,40 @@ export default {
           "tag": "fieldset",
           "type": "Radio buttons",
           "id": "select-rooms",
-          "cf-input-placeholder": "Select rooms number",
+          "cf-input-placeholder": "Select rooms count",
           "cf-questions": question,
           "children": [{
               "tag": "input",
               "type": "radio",
-              "name": "cleaning-roomsize",
+              "name": "cleaning-rooms",
               "cf-label": "1",
               "value": "1"
             },
             {
               "tag": "input",
               "type": "radio",
-              "name": "cleaning-roomsize",
+              "name": "cleaning-rooms",
               "cf-label": "2",
               "value": "2"
             },
             {
               "tag": "input",
               "type": "radio",
-              "name": "cleaning-roomsize",
+              "name": "cleaning-rooms",
               "cf-label": "3",
               "value": 3
             },
             {
               "tag": "input",
               "type": "radio",
-              "name": "cleaning-roomsize",
+              "name": "cleaning-rooms",
               "cf-label": "4",
               "value": 4
             },
             {
               "tag": "input",
               "type": "radio",
-              "name": "cleaning-roomsize",
+              "name": "cleaning-rooms",
               "cf-label": "5+",
               "value": "5+"
             }
@@ -357,7 +409,7 @@ export default {
           "children": [{
               "tag": "input",
               "type": "radio",
-              "name": "cleaning-frequency",
+              "name": "cleaning-freq",
               "cf-label": "Weekly",
               "value": "weekly",
               "checked": "checked"
@@ -365,7 +417,7 @@ export default {
             {
               "tag": "input",
               "type": "radio",
-              "name": "cleaning-frequency",
+              "name": "cleaning-freq",
               "cf-label": "Monthly",
               "value": "monthly"
             }
@@ -378,12 +430,15 @@ export default {
         cleaning[0];
       this.cf.addTags([itemToAdd]);
     },
+    /** 
+     * Add the Meals questions.
+     */
     addMeals(questionId) {
       const meals = [{
           "tag": "fieldset",
           "type": "Checkboxes",
           "id": "meals-pref",
-          "cf-input-placeholder": "",
+          "cf-input-placeholder": "Select your food preferences",
           "cf-questions": "Very well &&What are your food preferences? &&Select all that apply",
           "children": [{
               "tag": "input",
@@ -403,8 +458,8 @@ export default {
               "tag": "input",
               "type": "checkbox",
               "name": "meal-pref",
-              "cf-label": "Mix of everything",
-              "value": "mix"
+              "cf-label": "Foods rich in proteins",
+              "value": "proteins-rich"
             }
           ]
         },
@@ -443,6 +498,23 @@ export default {
         meals.find(item => item.id === questionId) :
         meals[0];
       this.cf.addTags([itemToAdd]);
+    },
+    /** 
+     * Add the payment questions.
+     */
+    addPaymentQuestion() {
+      const $vm = this;
+      const q = [{
+        "tag": "input",
+        "type": "radio",
+        "id": "init-payment",
+        "cf-questions": `Almost there. &&We just need to process your payment and Voila! &&Your services come to N${$vm.currentPlan.price}/month. Begin now?`,
+        "cf-label": "Yes",
+        "value": true,
+        "cf-error": "No payment processed. Retry?"
+      }];
+      this.addedPaymentQuestion = true;
+      this.cf.addTags(q);
     }
   }
 };

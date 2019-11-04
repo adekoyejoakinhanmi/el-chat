@@ -5,7 +5,7 @@
 </template>
 
 <script>
-import { PriceCalculator } from "./components/PriceCalculator/index";
+import { PriceCalculator } from "@/components";
 
 export default {
   name: 'app',
