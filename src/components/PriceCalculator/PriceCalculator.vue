@@ -3,13 +3,8 @@
     <div class="chat-header">
       <h3 class="title">Select & Customize Services</h3>
       <div class="price-wrapper">
-        <h3>N{{ currentPlan.price || 0 }}</h3>
+        <h4>N{{ currentPlan.price || 0 }}</h4>
       </div>
-    </div>
-    <div>
-      <form id="form" cf-form>
-      </form>
-      <div id="cf-context" role="cf-context" cf-context></div>
     </div>
   </div>
 </template>
@@ -20,26 +15,20 @@ import {
   EventDispatcher,
   ChatResponseEvents
 } from 'conversational-form';
-import {
-  plans
-} from "@/assets/js/plans";
-import {
-  isEqual
-} from "lodash";
-
-
-const robotImage = "data:image/svg+xml;base64,PHN2ZyBpZD0iYm90IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgMjAwIDIwMCI+CiAgPGNpcmNsZSBpZD0iRWxsaXBzZV8xIiBkYXRhLW5hbWU9IkVsbGlwc2UgMSIgY3g9IjEwMCIgY3k9IjEwMCIgcj0iMTAwIiBmaWxsPSIjZTVlNmVhIi8+CiAgPHJlY3QgaWQ9IlJlY3RhbmdsZV8xIiBkYXRhLW5hbWU9IlJlY3RhbmdsZSAxIiB3aWR0aD0iNjgiIGhlaWdodD0iNjgiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDY2IDY2KSIgZmlsbD0iI2Y0OWIzZiIvPgo8L3N2Zz4K";
+import { plans } from "@/assets/js/plans";
+import { robotImage, userImage } from "@/assets/js/misc";
+import { isEqual } from "lodash";
 
 export default {
   name: 'PriceCalculator',
   data() {
     return {
       selectedServices: [],
-      servicesPreferences: null,
+      chatReplies: null,
       addedPaymentQuestion: false,
       steps: {
-        current: null,
-        max: null
+        currentStep: 0,
+        maxSteps: 0
       }
     }
   },
@@ -57,12 +46,12 @@ export default {
       return filterPlan[0];
     },
     services() {
-      if (!this.servicesPreferences) return {};
+      if (!this.chatReplies) return {};
       const itemsToCollect = {};
-      Object.keys(this.servicesPreferences)
+      Object.keys(this.chatReplies)
         .filter(e => e !== 'services')
         .forEach(service => {
-          let itemPreference = this.servicesPreferences[service][0].trim();
+          let itemPreference = this.chatReplies[service][0].trim();
           if (service === 'laundry-freq' && itemPreference !== "") {
             itemsToCollect['Laundry'] = itemPreference
           }
@@ -80,58 +69,49 @@ export default {
         delete itemsToCollect.Rooms;
       return itemsToCollect;
     },
-    allQuestionsDone() {
-      const doneItems = Object.keys(this.services);
-      return isEqual(doneItems, this.selectedServices);
-    },
     isPenultimateStep() {
       const {
-        max,
-        current
+        maxSteps,
+        currentStep
       } = this.steps;
-      if ((max - 2) === current) {
+      if ((maxSteps - 2) === currentStep) {
         return true;
       }
       return false;
     }
   },
-  mounted: function () {
-    this.setupForm()
+  mounted() {
+    this.setupForm();
     const el = document.createElement('script');
     el.src = 'https://js.paystack.co/v1/inline.js';
     this.$el.appendChild(el);
   },
   methods: {
-    updateServicePreferences() {
+    updateChatReplies() {
       const formDataSerialized = this.cf.getFormData(true);
-      this.servicesPreferences = formDataSerialized;
+      this.chatReplies = formDataSerialized;
     },
     updateSteps() {
-      const {
+      const { maxSteps, step } = this.cf.flowManager;
+      this.steps = {
         maxSteps,
-        step
-      } = this.cf.flowManager;
-      const item = {
-        current: step,
-        max: maxSteps
+        currentStep: step
       };
-      this.steps = item;
     },
     userClickedChat(e) {
-      console.log(e);
       const currentTags = this.cf.tags;
       const index = currentTags.map(t => t.name).indexOf(e.detail.name);
       const updated = currentTags.slice(0, index + 1);
       this.cf.chatList.clearFrom(index + 1);
       this.cf.flowManager.setTags(updated);
       this.cf.flowManager.startFrom(index + 1, true);
-      this.updateServicePreferences();
+      this.updateChatReplies();
     },
     initPayment(success, error) {
       const vm = this;
       const setupParams = {
         key: process.env.VUE_APP_PAYSTACK_KEY,
-        email: vm.servicesPreferences.user_email,
+        email: vm.chatReplies.user_email,
         amount: vm.currentPlan.price * 100,
         callback: function () {
           success()
@@ -145,15 +125,14 @@ export default {
     },
     addPaymentQuestion() {
       const $vm = this;
-      const label = `Pay ${$vm.currentPlan.price}/month`;
       const q = [{
         "tag": "input",
         "type": "radio",
         "id": "init-payment",
-        "cf-questions": "Almost there. &&Initiate your freedom from chores.",
-        "cf-label": label,
+        "cf-questions": `Almost there. &&We just need to process your payment and Voila!&& Your services come to N${$vm.currentPlan.price}/month. Begin now?`,
+        "cf-label": "Yes",
         "value": true,
-        "cf-error": "Payment failed. Retry?"
+        "cf-error": "No payment processed. Retry?"
       }];
       this.addedPaymentQuestion = true;
       this.cf.addTags(q);
@@ -215,15 +194,12 @@ export default {
           loadExternalStyleSheet: false,
           preventAutoFocus: true,
           eventDispatcher: eventHandler,
-          suppressLog: false,
-          robotImage
+          robotImage,
+          userImage
         },
         tags: formFields
       });
       this.cf = cf;
-      console.log({
-        loaded: this.cf.loadExternalStyleSheet
-      })
       this.$el.appendChild(this.cf.el);
     },
     submitCallback() {
@@ -266,7 +242,7 @@ export default {
       if (currentQuestionId === 'init-payment') {
         return this.initPayment(success, e);
       }
-      this.updateServicePreferences();
+      this.updateChatReplies();
       this.updateSteps();
       return success();
     },
