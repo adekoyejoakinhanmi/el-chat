@@ -22,6 +22,7 @@ h1, h2, h3, h4, h5, h6 {
 .app-container {
   background: $secondary-color;
   height: 100vh;
+  position: relative;
   @media screen and (min-width: 768px){
     padding: 10px;
   }
