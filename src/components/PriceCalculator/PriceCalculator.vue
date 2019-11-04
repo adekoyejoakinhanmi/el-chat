@@ -1,7 +1,7 @@
 <template>
   <div class="chat-wrapper">
     <div class="chat-header">
-      <h3 class="title">Select & Customize Services</h3>
+      <h4 class="title">Select & Customize Services</h4>
       <div class="price-wrapper">
         <h4>N{{ currentPlan.price || 0 }}</h4>
       </div>

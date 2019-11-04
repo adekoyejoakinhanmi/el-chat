@@ -8,9 +8,15 @@
   box-shadow: 0px 6px 12px 0px rgba($color: #000000, $alpha: 0.1);
 }
 .chat-header {
-  position: absolute;
-  left: 15px;
-  width: calc(100% - 30px);
+  position: fixed;
+  left: 50%;
+  top: 10px;
+  width: 100%;
+  max-width: 430px;
+  border-radius: 8px;
+  transform: translateX(-50%);
+  background: white;
+  padding: 10px;
   display: flex;
   z-index: 9999;
   justify-content: space-between;
@@ -44,9 +50,6 @@ $cf-font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, 
 @import "../../../node_modules/conversational-form/src/styles/conversational-form";
 
 .chat-wrapper {
-  .conversational-form:before {
-    height: 64px;
-  }
   .conversational-form--enable-animation cf-input input,
   .conversational-form--enable-animation cf-input textarea {
     border-radius: 40em;
@@ -57,8 +60,9 @@ $cf-font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, 
   }
   .conversational-form:before {
     border-top-left-radius: 8px;
-    background: white;
     border-top-right-radius: 8px;
+    background: white;
+    height: 15px;
   }
   .cf-input-button.cf-input-button  {
     border-radius: 50%;
