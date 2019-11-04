@@ -1,6 +1,6 @@
 $body-color: #393939;
 $heading-color: #343434;
-$accent-color: #f49b3f;
+$accent-color: #f49d3f;
 $secondary-color: #F0FEF8;
 
 *, *:before, *::after {
@@ -15,7 +15,7 @@ body {
   color: $body-color;
   font-weight: 500;
 }
-h1, h2, h3 {
+h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
   color: $heading-color;
 }
